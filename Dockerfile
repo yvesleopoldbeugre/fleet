@@ -11,11 +11,14 @@ FROM golang:1.26-bookworm AS builder
 
 ARG FLEET_VERSION=custom
 
-# Node.js (matches package.json "engines".node) + Yarn
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends nodejs make && \
+# Node.js 24 (matches package.json "engines".node) + Yarn copied from official node image
+COPY --from=node:24-bookworm /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24-bookworm /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
     npm install -g yarn && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends make && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /fleet
