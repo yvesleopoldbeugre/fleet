@@ -54,7 +54,12 @@ const config = {
   },
   output: {
     path: path.join(repo, "assets/"),
-    publicPath: "/assets/",
+    // ASSETS_BASE_URL lets the built bundle (JS/CSS/images) be fetched from
+    // a separate static host/CDN instead of this same Fleet server, e.g.
+    // ASSETS_BASE_URL=https://assets.example.com/assets/ yarn run webpack.
+    // Defaults to the existing same-origin relative path when unset, so
+    // builds without it behave exactly as before.
+    publicPath: process.env.ASSETS_BASE_URL || "/assets/",
     filename: "[name].js",
   },
   devtool: process.env.NODE_ENV === "development" ? DEV_SOURCE_MAPS : false,
