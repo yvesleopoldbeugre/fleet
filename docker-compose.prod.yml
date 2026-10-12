@@ -62,8 +62,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
       args:
         FLEET_VERSION: ${FLEET_VERSION:-custom}
+        ASSETS_BASE_URL: ${ASSETS_BASE_URL:-}
     depends_on:
       mysql:
         condition: service_healthy
@@ -113,6 +115,28 @@ services:
           "CMD-SHELL",
           "if [ \"$$FLEET_SERVER_TLS\" = \"true\" ]; then wget --no-check-certificate -qO- https://127.0.0.1:$$FLEET_SERVER_PORT/healthz; else wget -qO- http://127.0.0.1:$$FLEET_SERVER_PORT/healthz; fi"
         ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Opt-in static host for the frontend bundle (JS/CSS/images/fonts),
+  # decoupled from the `fleet` API server/binary. Only meaningful once
+  # ASSETS_BASE_URL is set (in .env.prod) to this service's public URL --
+  # until then nothing points at it. Start explicitly with:
+  #   docker compose --profile assets up -d
+  assets:
+    profiles: ["assets"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: assets
+      args:
+        ASSETS_BASE_URL: ${ASSETS_BASE_URL:-}
+    ports:
+      - "${ASSETS_SERVER_PORT:-8090}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12

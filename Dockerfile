@@ -24,13 +24,21 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
 WORKDIR /fleet
 COPY . .
 
+# ASSETS_BASE_URL points the frontend's JS/CSS/image references at a
+# separate static host (e.g. the "assets" stage below, or a CDN) instead of
+# this same Fleet server. Empty (default) preserves the original same-origin
+# "/assets/..." behavior -- bindata still embeds the built assets either way,
+# so the runtime stage works unmodified whether or not ASSETS_BASE_URL is set.
+ARG ASSETS_BASE_URL=""
+ENV ASSETS_BASE_URL=$ASSETS_BASE_URL
+
 RUN make deps
 RUN make generate
 RUN make fleet-static
 RUN make fleetctl
 
-# ---- Stage 2: minimal runtime image ----
-FROM alpine:3.23
+# ---- Stage 2: minimal runtime image (API + frontend HTML, same as before) ----
+FROM alpine:3.23 AS runtime
 LABEL org.opencontainers.image.title="fleet (custom build)"
 LABEL org.opencontainers.image.source="local"
 
@@ -46,3 +54,12 @@ COPY --from=builder /fleet/build/fleetctl /usr/bin/fleetctl
 USER fleet
 
 CMD ["fleet", "serve"]
+
+# ---- Stage 3: static asset server (opt-in, see ASSETS_BASE_URL above) ----
+# Serves the exact same webpack output the runtime stage embedded, so the
+# URLs react.tmpl was built with (when ASSETS_BASE_URL points here) actually
+# resolve. Only useful when ASSETS_BASE_URL was set for this build --
+# otherwise nothing references this stage's output and it can be ignored.
+FROM nginx:1.27-alpine AS assets
+COPY --from=builder /fleet/assets /usr/share/nginx/html/assets
+COPY tools/nginx-assets/nginx-assets.conf /etc/nginx/conf.d/default.conf
