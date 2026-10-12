@@ -124,6 +124,14 @@ type ServerConfig struct {
 	TLS                              bool
 	TLSProfile                       string        `yaml:"tls_compatibility"`
 	URLPrefix                        string        `yaml:"url_prefix"`
+	// AssetsBaseURL is prepended to the frontend bundle's filenames
+	// (assets/manifest.json's "main.js"/"main.css") in the server-rendered
+	// index.html shell (server/service/frontend.go). Empty (default) keeps
+	// the existing same-origin "/assets/..." behavior, served by this
+	// process from bindata. Set it (matching the webpack ASSETS_BASE_URL
+	// build arg) to fetch the bundle from a separate static host/CDN
+	// instead -- see tools/nginx-assets/ for the reference setup.
+	AssetsBaseURL                    string        `yaml:"assets_base_url"`
 	Keepalive                        bool          `yaml:"keepalive"`
 	SandboxEnabled                   bool          `yaml:"sandbox_enabled"`
 	WebsocketsAllowUnsafeOrigin      bool          `yaml:"websockets_allow_unsafe_origin"`
@@ -1391,6 +1399,8 @@ func (man Manager) addConfigs() {
 			TLSProfileModern, TLSProfileIntermediate))
 	man.addConfigString("server.url_prefix", "",
 		"URL prefix used on server and frontend endpoints")
+	man.addConfigString("server.assets_base_url", "",
+		"Base URL to fetch the frontend bundle (JS/CSS) from, e.g. a CDN or separate static host. Empty serves it from this process as before.")
 	man.addConfigBool("server.keepalive", true,
 		"Controls whether HTTP keep-alives are enabled.")
 	man.addConfigBool("server.sandbox_enabled", false,
@@ -1907,6 +1917,7 @@ func (man Manager) LoadConfig() FleetConfig {
 			TLS:                              man.getConfigBool("server.tls"),
 			TLSProfile:                       man.getConfigTLSProfile(),
 			URLPrefix:                        man.getConfigString("server.url_prefix"),
+			AssetsBaseURL:                    man.getConfigString("server.assets_base_url"),
 			Keepalive:                        man.getConfigBool("server.keepalive"),
 			SandboxEnabled:                   man.getConfigBool("server.sandbox_enabled"),
 			WebsocketsAllowUnsafeOrigin:      man.getConfigBool("server.websockets_allow_unsafe_origin"),

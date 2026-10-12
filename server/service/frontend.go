@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -27,11 +29,65 @@ func newBinaryFileSystem(root string) *assetfs.AssetFS {
 	}
 }
 
-func ServeFrontend(urlPrefix string, sandbox bool, logger *slog.Logger, serveCSP bool) http.Handler {
+// indexHTMLTemplateSource is owned entirely by the backend, independent of
+// whatever tool builds the frontend bundle (webpack today, potentially
+// something else later). It only needs the frontend build to produce
+// assets/manifest.json (see assetManifest below) plus the two files it
+// names -- nothing React- or webpack-specific leaks into this file.
+//
+//go:embed templates/index.html.tmpl
+var indexHTMLTemplateSource string
+
+// assetManifest is the shape of assets/manifest.json, emitted by the
+// frontend build (FleetAssetManifestPlugin in webpack.config.js) so this
+// backend never has to know the current content-hashed bundle filenames,
+// or anything about the tool that produced them.
+type assetManifest struct {
+	MainJS  string `json:"main.js"`
+	MainCSS string `json:"main.css"`
+}
+
+// loadAssetManifest reads assets/manifest.json fresh on every call (like the
+// rest of the bindata-backed assets) so a frontend rebuild during local dev
+// (webpack watch mode) is picked up without restarting the Fleet server.
+func loadAssetManifest() (assetManifest, error) {
+	fs := newBinaryFileSystem("/assets")
+	file, err := fs.Open("manifest.json")
+	if err != nil {
+		return assetManifest{}, fmt.Errorf("open asset manifest: %w", err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return assetManifest{}, fmt.Errorf("read asset manifest: %w", err)
+	}
+
+	var m assetManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return assetManifest{}, fmt.Errorf("parse asset manifest: %w", err)
+	}
+	return m, nil
+}
+
+// ServeFrontend serves the SPA's HTML shell. The template is owned by this
+// package (templates/index.html.tmpl, embedded at compile time) and is
+// independent of whatever tool built the frontend bundle -- it only needs
+// assets/manifest.json to exist with "main.js"/"main.css" keys. assetsBaseURL
+// is prepended to those filenames: empty means same-origin ("/assets/..."
+// served by this process, as before); set it to fetch the bundle from a
+// separate static host/CDN instead (its build must have used the matching
+// webpack ASSETS_BASE_URL so manifest filenames and publicPath agree).
+func ServeFrontend(urlPrefix string, assetsBaseURL string, sandbox bool, logger *slog.Logger, serveCSP bool) http.Handler {
 	herr := func(ctx context.Context, w http.ResponseWriter, err string) {
 		logger.ErrorContext(ctx, err)
 		http.Error(w, err, http.StatusInternalServerError)
 	}
+
+	// Parsed once: this template is backend-owned and embedded at compile
+	// time, so unlike the asset manifest it can't change without a Go rebuild.
+	t, tmplErr := template.New("index").Parse(indexHTMLTemplateSource)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		nonce, err := endpointer.WriteBrowserSecurityHeaders(w, serveCSP, serveCSP)
@@ -48,36 +104,37 @@ func ServeFrontend(urlPrefix string, sandbox bool, logger *slog.Logger, serveCSP
 			return
 		}
 
-		fs := newBinaryFileSystem("/frontend")
-		file, err := fs.Open("templates/react.tmpl")
-		if err != nil {
-			herr(ctx, w, "load react template: "+err.Error())
+		if tmplErr != nil {
+			herr(ctx, w, "parse index template: "+tmplErr.Error())
 			return
 		}
-		data, err := io.ReadAll(file)
+
+		manifest, err := loadAssetManifest()
 		if err != nil {
-			herr(ctx, w, "read bindata file: "+err.Error())
+			herr(ctx, w, "load asset manifest: "+err.Error())
 			return
 		}
-		t, err := template.New("react").Parse(string(data))
-		if err != nil {
-			herr(ctx, w, "create react template: "+err.Error())
-			return
-		}
+
 		serverType := "on-premise"
 		if sandbox {
 			serverType = "sandbox"
 		}
 		if err := t.Execute(w, struct {
-			URLPrefix  string
-			ServerType string
-			CSPNonce   string
+			URLPrefix     string
+			AssetsBaseURL string
+			ServerType    string
+			CSPNonce      string
+			MainJS        string
+			MainCSS       string
 		}{
-			URLPrefix:  urlPrefix,
-			ServerType: serverType,
-			CSPNonce:   nonce,
+			URLPrefix:     urlPrefix,
+			AssetsBaseURL: assetsBaseURL,
+			ServerType:    serverType,
+			CSPNonce:      nonce,
+			MainJS:        manifest.MainJS,
+			MainCSS:       manifest.MainCSS,
 		}); err != nil {
-			herr(ctx, w, "execute react template: "+err.Error())
+			herr(ctx, w, "execute index template: "+err.Error())
 			return
 		}
 	})

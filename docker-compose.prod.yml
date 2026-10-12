@@ -98,6 +98,11 @@ services:
       - FLEET_VULNERABILITIES_PERIODICITY=${FLEET_VULNERABILITIES_PERIODICITY}
       - FLEET_DEV_ANDROID_GOOGLE_CLIENT=${FLEET_DEV_ANDROID_GOOGLE_CLIENT}
       - FLEET_DEV_ANDROID_GOOGLE_SERVICE_CREDENTIALS=${FLEET_DEV_ANDROID_GOOGLE_SERVICE_CREDENTIALS}
+      # Runtime counterpart to the ASSETS_BASE_URL build arg above: the
+      # webpack build bakes it into manifest.json/publicPath, this tells the
+      # running Go process to use the same value when rendering index.html.
+      # Keep both in sync -- same value, same .env.prod variable.
+      - FLEET_SERVER_ASSETS_BASE_URL=${ASSETS_BASE_URL:-}
     ports:
       - "${FLEET_SERVER_PORT}:${FLEET_SERVER_PORT}"
     volumes:

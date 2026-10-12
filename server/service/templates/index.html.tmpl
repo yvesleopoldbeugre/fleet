@@ -18,12 +18,12 @@
     <link
       rel="stylesheet"
       type="text/css"
-      href="{{.URLPrefix}}<%= htmlWebpackPlugin.files.css[0] %>"
+      href="{{.AssetsBaseURL}}{{.MainCSS}}"
     />
     <link rel="shortcut icon" href="{{.URLPrefix}}/assets/favicon.ico" />
 
     <title>Fleet</title>
-    <script type="text/javascript" nonce="{{.CSPNonce}}}">
+    <script type="text/javascript" nonce="{{.CSPNonce}}">
       var urlPrefix = "{{.URLPrefix}}";
     </script>
   </head>
@@ -33,7 +33,7 @@
       async
       defer
       nonce="{{.CSPNonce}}"
-      src="{{.URLPrefix}}<%= htmlWebpackPlugin.files.js[0] %>"
+      src="{{.AssetsBaseURL}}{{.MainJS}}"
     ></script>
   </body>
 </html>
