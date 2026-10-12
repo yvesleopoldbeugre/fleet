@@ -24,7 +24,7 @@ func TestServeFrontend(t *testing.T) {
 		t.Skip("This test requires running with -tags full")
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	h := ServeFrontend("", false, logger, false)
+	h := ServeFrontend("", "", false, logger, false)
 	ts := httptest.NewServer(h)
 	t.Cleanup(func() {
 		ts.Close()

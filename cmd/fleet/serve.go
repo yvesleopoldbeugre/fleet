@@ -723,7 +723,7 @@ func runServeCmd(cmd *cobra.Command, configManager configpkg.Manager, debug, dev
 	{
 		frontendHandler = service.PrometheusMetricsHandler(
 			"get_frontend",
-			service.ServeFrontend(config.Server.URLPrefix, config.Server.SandboxEnabled, httpLogger, serveCSP),
+			service.ServeFrontend(config.Server.URLPrefix, config.Server.AssetsBaseURL, config.Server.SandboxEnabled, httpLogger, serveCSP),
 		)
 
 		frontendHandler = service.WithMDMEnrollmentMiddleware(svc, httpLogger, frontendHandler)

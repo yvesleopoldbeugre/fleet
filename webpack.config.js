@@ -3,7 +3,6 @@ require("es6-promise").polyfill();
 const path = require("path");
 const webpack = require("webpack");
 const bourbon = require("node-bourbon").includePaths;
-const HtmlWebpackPlugin = require("html-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const WebpackNotifierPlugin = require("webpack-notifier");
 const ForkTsCheckerWebpackPlugin = require("fork-ts-checker-webpack-plugin");
@@ -11,16 +10,44 @@ const globImporter = require("node-sass-glob-importer");
 
 const DEV_SOURCE_MAPS = "eval-source-map";
 
+// Emits assets/manifest.json ({"main.js": "bundle-<hash>.js", "main.css":
+// "bundle-<hash>.css"}) instead of a server-rendered HTML file. The backend
+// (server/service/frontend.go) owns its own small index.html template and
+// reads this manifest to find the current bundle filenames -- so it no
+// longer needs to understand anything webpack- or React-specific. Swapping
+// the frontend's build tool later only requires that tool to also emit this
+// same two-key manifest shape; the Go side never has to change.
+class FleetAssetManifestPlugin {
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap("FleetAssetManifestPlugin", (compilation) => {
+      compilation.hooks.processAssets.tap(
+        {
+          name: "FleetAssetManifestPlugin",
+          stage: webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL,
+        },
+        () => {
+          const manifest = {};
+          for (const chunk of compilation.chunks) {
+            for (const file of chunk.files) {
+              if (file.endsWith(".js") && !manifest["main.js"]) {
+                manifest["main.js"] = file;
+              }
+              if (file.endsWith(".css") && !manifest["main.css"]) {
+                manifest["main.css"] = file;
+              }
+            }
+          }
+          const json = JSON.stringify(manifest, null, 2);
+          compilation.emitAsset("manifest.json", new webpack.sources.RawSource(json));
+        }
+      );
+    });
+  }
+}
+
 let plugins = [
   new ForkTsCheckerWebpackPlugin(),
-  new HtmlWebpackPlugin({
-    filename: "../frontend/templates/react.tmpl",
-    inject: false,
-    templateParameters: {
-      isProduction: process.env.NODE_ENV === "production",
-    },
-    template: "frontend/templates/react.ejs",
-  }),
+  new FleetAssetManifestPlugin(),
   new WebpackNotifierPlugin({
     excludeWarnings: true,
   }),
