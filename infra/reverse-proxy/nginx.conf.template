@@ -1,0 +1,51 @@
+# Single public entrypoint in front of two untouched containers: Fleet's own
+# `fleet` service (unmodified) and the static asset host from
+# infra/assets-static/ (also independent of Fleet's own build).
+#
+# Routing is the entire mechanism: the browser only ever sees one origin, so
+# Fleet's existing relative "/assets/..." URLs keep working with zero changes
+# to webpack.config.js, server/service/frontend.go, or anything else in the
+# Fleet codebase. This also doubles as the template for migrating individual
+# pages to an alternative frontend later (see frontend-nuxt/, #4): add that
+# service here and a `location` block for the page(s) it owns -- Fleet's own
+# serving code never has to know.
+#
+# Uses the official nginx image's envsubst templating (this file lives under
+# /etc/nginx/templates/, see docker-compose.override.yml), so
+# $FLEET_SERVER_PORT below is substituted from the environment at container
+# start -- no custom Dockerfile needed for this piece.
+
+upstream fleet_backend {
+    server fleet:${FLEET_SERVER_PORT};
+}
+
+upstream assets_backend {
+    server assets:80;
+}
+
+server {
+    listen 80;
+    server_tokens off;
+    client_max_body_size 3G;  # software installers / bootstrap packages
+
+    location /assets/ {
+        proxy_pass http://assets_backend;
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        proxy_pass http://fleet_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Live queries use a websocket; MDM check-ins and long software
+        # installs need generous timeouts.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
