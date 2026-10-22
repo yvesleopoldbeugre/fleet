@@ -1,0 +1,43 @@
+# Adds a reverse proxy + a standalone static asset host in front of the
+# UNMODIFIED `fleet` service from ../../docker-compose.prod.yml. Nothing in
+# that file changes -- this is a second compose file layered on top via
+# Docker Compose's native multi-file merge, which is additive by design
+# (services here are new; nothing here redefines a `fleet` service field).
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.prod.yml -f infra/reverse-proxy/docker-compose.override.yml \
+#     --env-file .env.prod up -d --build
+#
+# The reverse proxy becomes the only port you need to expose publicly;
+# `fleet`'s own ${FLEET_SERVER_PORT} mapping in docker-compose.prod.yml can
+# then be removed or kept bound to localhost only, your call.
+#
+# To migrate a page to an alternative frontend later (see frontend-nuxt/,
+# #4): add that service here, and a `location` block in nginx.conf.template
+# routing the page(s) it owns -- same pattern as the `assets` service below,
+# zero changes to the Fleet codebase.
+
+services:
+  assets:
+    build:
+      context: ../..
+      dockerfile: infra/assets-static/Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - fleet
+      - assets
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+    environment:
+      - FLEET_SERVER_PORT=${FLEET_SERVER_PORT}
+    ports:
+      - "${REVERSE_PROXY_PORT:-8080}:80"
+    restart: unless-stopped
